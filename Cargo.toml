@@ -1,6 +1,5 @@
 [package]
-# TODO fix `authors` and `name` if you didn't use `cargo-generate`
-name = "test-app"
+name = "usb_audio_tests"
 edition = "2021"
 version = "0.1.0"
 
@@ -9,12 +8,16 @@ cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 defmt = { version = "0.3", features = ["encoding-rzcobs"] }
 defmt-brtt = { version = "0.1", default-features = false, features = ["rtt"] }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
-# TODO(4) Select the correct rtic backend
-rtic = { version = "2.0.0-alpha.1", features = [ "$RTIC_BACKEND" ] }
-# TODO(5) Add hal as dependency
-some-hal = "1.2.3"
+rtic = { version = "2.0.0-alpha.1", features = [ "thumbv7-backend" ] }
+stm32f4xx-hal = { version = "0.16.1", features = ["stm32f411", "rt", "usb_fs", "i2s"] }
+
 # TODO add a monotonic if you use scheduling
 # rtic-monotonics = { version = "1.0.0-alpha.2", features = [ "cortex-m-systick" ]}
+
+# USB audio stuff
+fugit = "0.3.6"
+usb-device = { version = "0.2.8", features = ["control-buffer-256"] }
+usbd-audio = "0.1.0"
 
 # cargo build/run
 [profile.dev]

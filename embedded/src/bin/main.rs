@@ -5,13 +5,18 @@
 use usb_audio_tests as _; // global logger + panicking-behavior + memory layout
 
 #[rtic::app(
-	device = stm32f4xx_hal::pac,
+	device = hal::pac,
 	dispatchers = [EXTI0, EXTI1, EXTI2]
 )]
 mod app {
 
 	use usb_audio_tests::*;
-	use stm32f4xx_hal::prelude::*;
+	
+	use stm32f4xx_hal as hal;
+	use hal::pac as pac;
+	use hal::prelude::*;
+
+	use core::fmt::Write; // for pretty formatting of the serial output
 
 	// Shared resources go here
 	#[shared]
@@ -22,6 +27,7 @@ mod app {
 	// Local resources go here
 	#[local]
 	struct Local {
+		tx: hal::serial::Tx<pac::USART1, u8>,
 		usb_handler: usb::USBHandler<'static>,
 		debug_handler: debug_gpio::DebugHandler
 	}
@@ -49,6 +55,12 @@ mod app {
 			.require_pll48clk()
 			.freeze();
 
+		let tx: hal::serial::Tx<pac::USART1, u8> = device.USART1.tx(
+			gpioa.pa9, 
+			115200.bps(), 
+			&clocks
+		).unwrap();
+
 		let usb_peripherals = usb::USBPeripherals {
 			otg_fs_global: device.OTG_FS_GLOBAL,
 			otg_fs_device: device.OTG_FS_DEVICE,
@@ -62,6 +74,7 @@ mod app {
 
 		let debug_gpio = debug_gpio::DebugGPIO {
 			pc3: gpioc.pc3,
+			pc2: gpioc.pc2
 		};
 
 		let debug_handler = debug_gpio::init(debug_gpio);
@@ -71,6 +84,7 @@ mod app {
 				// Initialization of shared resources go here
 			},
 			Local {
+				tx,
 				usb_handler,
 				debug_handler
 			},
@@ -89,16 +103,18 @@ mod app {
 
 	#[task(
 		priority = 5,
-		// TODO: Change from general interrupt to correct one
 		binds = OTG_FS,
-		local = [usb_handler, debug_handler]
+		local = [tx, usb_handler, debug_handler]
 	)]
 	fn USB_interrupt(cx: USB_interrupt::Context) {
+		debug_gpio::toggle_usb_interrupt(cx.local.debug_handler);
+
 		if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
 			let mut buf = [0u8; 1024];
-			if let Ok(_len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
-				debug_gpio::toggle(cx.local.debug_handler);
-				//defmt::info!("Usb Interrupt");
+			if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
+				debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
+
+				writeln!(cx.local.tx, "{len}").unwrap();
 			}
 		}
 	}

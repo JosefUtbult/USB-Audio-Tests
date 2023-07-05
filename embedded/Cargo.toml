@@ -10,6 +10,7 @@ defmt-brtt = { version = "0.1", default-features = false, features = ["rtt"] }
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 rtic = { version = "2.0.0-alpha.1", features = [ "thumbv7-backend" ] }
 stm32f4xx-hal = { version = "0.16.1", features = ["stm32f411", "rt", "usb_fs", "i2s"] }
+cortex-m-rt = "0.7.3"
 
 # TODO add a monotonic if you use scheduling
 # rtic-monotonics = { version = "1.0.0-alpha.2", features = [ "cortex-m-systick" ]}

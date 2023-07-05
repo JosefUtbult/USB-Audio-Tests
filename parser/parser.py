@@ -57,7 +57,7 @@ if __name__ == '__main__':
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
-    ax.set_ylim(1.6, 2.4)
+    # ax.set_ylim(1.6, 2.4)
 
     # Set labels
     plt.xlabel("Time (ms)")

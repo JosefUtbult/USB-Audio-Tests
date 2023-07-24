@@ -18,7 +18,9 @@ use stm32f4xx_hal::{
 	otg_fs::{USB, UsbBus}
 };
 
-static mut EP_MEMORY: [u32; 1024] = [0; 1024];
+pub const USB_BUFFER_SIZE: usize = 1024;
+// pub const USB_BUFFER_SIZE: usize = 100;
+static mut EP_MEMORY: [u32; USB_BUFFER_SIZE] = [0; USB_BUFFER_SIZE];
 
 // From this abomination of an example 
 // https://github.com/stm32-rs/stm32f1xx-hal/blob/master/examples/usb_serial_rtic.rs
@@ -59,17 +61,18 @@ pub fn init(usb_peripherals: USBPeripherals) -> USBHandler<'static>{
 	}
 
 	let usb_audio = AudioClassBuilder::new()
-		.input(
-			StreamConfig::new_discrete(
-			// Signed 24 bytes little endian
-			Format::S24le,
-			2,
-			&[48000],
-			TerminalType::InMicrophone).unwrap())
+		// .input(
+		// 	StreamConfig::new_discrete(
+		// 	// Signed 24 bit little endian
+		// 	Format::S24le,
+		// 	1,
+		// 	&[48000],
+		// 	TerminalType::InMicrophone).unwrap())
 		.output(
 			StreamConfig::new_discrete(
-			Format::S24le,
-			2,
+			// Signed 16 bit little endian
+			Format::S16le,
+			1,
 			&[48000],
 			TerminalType::OutSpeaker).unwrap())
 		.build(unsafe { USB_BUS.as_ref().unwrap() })

@@ -4,8 +4,8 @@ use stm32f4xx_hal::gpio::{
 };
 
 pub struct DebugGPIO {
-	pub pc3: Pin<'C', 3>,
-    pub pc2: Pin<'C', 2>
+	pub usb_interrupt: Pin<'C', 3>,
+    pub usb_audio_packet_interrupt: Pin<'C', 2>
 }
 
 pub struct DebugHandler {
@@ -15,8 +15,8 @@ pub struct DebugHandler {
 
 pub fn init(debug_gpio: DebugGPIO) -> DebugHandler {
 	
-	let mut usb_interrupt_pin = debug_gpio.pc3.into_push_pull_output();
-	let mut usb_audio_packet_interrupt_pin = debug_gpio.pc2.into_push_pull_output();
+	let mut usb_interrupt_pin = debug_gpio.usb_interrupt.into_push_pull_output();
+	let mut usb_audio_packet_interrupt_pin = debug_gpio.usb_audio_packet_interrupt.into_push_pull_output();
 
 	usb_interrupt_pin.set_low();
     usb_audio_packet_interrupt_pin.set_low();

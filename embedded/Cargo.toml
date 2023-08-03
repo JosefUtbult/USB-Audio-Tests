@@ -13,12 +13,17 @@ stm32f4xx-hal = { version = "0.16.1", features = ["stm32f411", "rt", "usb_fs", "
 cortex-m-rt = "0.7.3"
 
 # TODO add a monotonic if you use scheduling
-# rtic-monotonics = { version = "1.0.0-alpha.2", features = [ "cortex-m-systick" ]}
+rtic-monotonics = { version = "1.0.0-alpha.2", features = [ "cortex-m-systick" ]}
 
 # USB audio stuff
 fugit = "0.3.6"
+heapless = "0.7.16"
+
+#usb-device = { path = "../dependencies/usb-device", version = "0.2.8", features = ["control-buffer-256"] }
+usbd-audio = { path = "../dependencies/usbd-audio" }
+
 usb-device = { version = "0.2.8", features = ["control-buffer-256"] }
-usbd-audio = "0.1.0"
+#usbd-audio = { git = "https://github.com/kiffie/usbd-audio" }
 
 # cargo build/run
 [profile.dev]

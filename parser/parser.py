@@ -51,7 +51,7 @@ def generate_delta_time_plot(args, ax):
     # Set labels
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Clock speed (ms)")
-    ax.set_title("Clock speed over time")
+    # ax.set_title("Clock speed over time")
 
 
 def generate_packet_size_plot(args, ax):
@@ -87,12 +87,13 @@ def generate_packet_size_plot(args, ax):
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
-    ax.set_ylim(280, 295)
+    # ax.set_ylim(280, 295)
+    ax.set_ylim(92, 100)
 
     # Set labels
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Packet size")
-    ax.set_title("Packet size over time")
+    # ax.set_title("Packet size over time")
 
 
 if __name__ == '__main__':

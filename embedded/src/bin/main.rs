@@ -12,6 +12,7 @@ mod app {
     use usb_audio_tests::*;
     
     use stm32f4xx_hal as hal;
+    use rtic_monotonics::systick::*;
     use hal::pac as pac;
     use hal::prelude::*;
     use heapless::Vec;
@@ -36,17 +37,16 @@ mod app {
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
         defmt::info!("init");
+        
+        // Initialize the monotonic timer at 8 MHz
+        let systick_mono_token = rtic_monotonics::create_systick_token!();
+        Systick::start(cx.core.SYST, 8_000_000, systick_mono_token); // default STM32F4 clock rate at 8 MHz
 
         let device = cx.device;
         let gpioa = device.GPIOA.split();
         //let gpiob = device.GPIOB.split();;
         let gpioc = device.GPIOC.split();
 
-        // TODO setup monotonic if used
-        // let sysclk = { /* clock setup + returning sysclk as an u32 */ };
-        // let token = rtic_monotonics::create_systick_token!();
-        // rtic_monotonics::systick::Systick::new(cx.core.SYST, sysclk, token);
-        
         let rcc = device.RCC.constrain();
 
         let clocks = rcc
@@ -80,6 +80,8 @@ mod app {
 
         let debug_handler = debug_gpio::init(debug_gpio);
 
+        USB_interrupt::spawn().ok();
+
         (
             Shared {
                 // Initialization of shared resources go here
@@ -103,30 +105,26 @@ mod app {
     }
 
     #[task(
-        priority = 10,
-        binds = OTG_FS,
+        priority = 1,
         local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
     )]
-    fn USB_interrupt(cx: USB_interrupt::Context) {
-        debug_gpio::toggle_usb_interrupt(cx.local.debug_handler);
-        if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
-            let mut buf = [0u8; usb::USB_BUFFER_SIZE];
-            if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
-                debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
-                writeln!(cx.local.tx, "{len}").unwrap();
-                for i in 0..len {
-                    // Log all samples into a buffer until it is full,
-                    // and then dump the buffer over serial for recording
-                    if cx.local.buffer.is_full() {
-                        cx.local.tx.bwrite_all(cx.local.buffer).unwrap();
-                        cx.local.buffer.clear();
-                        
-                    }
-                    else {
-                        cx.local.buffer.push(buf[i]).unwrap();
+    async fn USB_interrupt(cx: USB_interrupt::Context) {
+        loop {
+            debug_gpio::toggle_usb_interrupt(cx.local.debug_handler);
+            if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
+                let mut buf = [0u8; usb::USB_BUFFER_SIZE];
+                if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
+                    debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
+                    writeln!(cx.local.tx, "{len}").unwrap();
+                    for i in 0..len/2 {
+                        let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
+                        if val != 0 {
+                            writeln!(cx.local.tx, "{val}").unwrap();
+                        }
                     }
                 }
             }
+            Systick::delay(100.nanos()).await;
         }
     }
 }

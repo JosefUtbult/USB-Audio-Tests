@@ -1,6 +1,7 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
 # Default runner
-runner = "probe-run --chip STM32F411RETx"
+#runner = "probe-run --chip STM32F411RETx"
+runner = "probe-run --chip STM32H745ZITx"
 
 # Debugger runner using probe-rs-cli
 #runner = "probe-rs-cli debug --chip STM32F411RETx --exe"

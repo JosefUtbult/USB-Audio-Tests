@@ -3,18 +3,27 @@
 #![feature(type_alias_impl_trait)]
 
 use usb_audio_tests as _; // global logger + panicking-behavior + memory layout
+use stm32h7xx_hal as hal;
 
 #[rtic::app(
     device = hal::pac,
     dispatchers = [EXTI0, EXTI1, EXTI2]
 )]
 mod app {
+    #[allow(unused_imports)]
     use usb_audio_tests::*;
+    use usb_audio_tests::debug_gpio;
     
-    use stm32f4xx_hal as hal;
+    use super::*;
+    #[allow(unused_imports)]
+    use hal::{
+        prelude::*,        
+        gpio::{Output, PushPull, gpioe::PE1},
+        rcc::rec::UsbClkSel,
+        usb_hs::{UsbBus, USB1}
+    };
+
     use rtic_monotonics::systick::*;
-    use hal::pac as pac;
-    use hal::prelude::*;
     use heapless::Vec;
 
     #[allow(unused_imports)]
@@ -29,7 +38,7 @@ mod app {
     // Local resources go here
     #[local]
     struct Local {
-        tx: hal::serial::Tx<pac::USART1, u8>,
+        tx: hal::serial::Tx<hal::stm32::USART3>,
         usb_handler: usb::USBHandler<'static>,
         debug_handler: debug_gpio::DebugHandler
     }
@@ -40,36 +49,51 @@ mod app {
         
         // Initialize the monotonic timer at 8 MHz
         let systick_mono_token = rtic_monotonics::create_systick_token!();
-        Systick::start(cx.core.SYST, 8_000_000, systick_mono_token); // default STM32F4 clock rate at 8 MHz
+        Systick::start(cx.core.SYST, 48_000_000, systick_mono_token); // default STM32F4 clock rate at 8 MHz
 
-        let device = cx.device;
-        let gpioa = device.GPIOA.split();
-        //let gpiob = device.GPIOB.split();;
-        let gpioc = device.GPIOC.split();
 
-        let rcc = device.RCC.constrain();
+        let pwr = cx.device.PWR.constrain();
+        let pwrcfg = pwr.freeze();
 
-        let clocks = rcc
-            .cfgr
-            .use_hse(8.MHz()) // Change this to the speed of the external crystal you're using
-            .sysclk(48.MHz())
-            .require_pll48clk()
-            .freeze();
+        // RCC
+        let rcc = cx.device.RCC.constrain();
+        let mut ccdr = rcc.sys_ck(80.MHz()).freeze(pwrcfg, &cx.device.SYSCFG);
 
-        let tx: hal::serial::Tx<pac::USART1, u8> = device.USART1.tx(
-            gpioa.pa9, 
-            115200.bps(), 
-            &clocks
-        ).unwrap();
+        // 48MHz CLOCK
+        let _ = ccdr.clocks.hsi48_ck().expect("HSI48 must run");
+        ccdr.peripheral.kernel_usb_clk_mux(UsbClkSel::Hsi48);
+
+        // TODO: This might need to changa
+        // let gpioa = cx.device.GPIOA.split(ccdr.peripheral.GPIOA); 
+        let gpiob = cx.device.GPIOB.split(ccdr.peripheral.GPIOB); 
+        let gpioc = cx.device.GPIOC.split(ccdr.peripheral.GPIOC);
+
+        let tx = gpioc.pc10.into_alternate();
+        let rx = gpioc.pc11.into_alternate();
+
+        let serial = cx.device
+            .USART3
+            .serial((tx, rx), 19_200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+            .unwrap();
+
+        let (tx, _rx) = serial.split();
 
         let usb_peripherals = usb::USBPeripherals {
-            otg_fs_global: device.OTG_FS_GLOBAL,
-            otg_fs_device: device.OTG_FS_DEVICE,
-            otg_fs_pwclk: device.OTG_FS_PWRCLK,
-            usb_dm: gpioa.pa11,
-            usb_dp: gpioa.pa12,
-            hclk: clocks.hclk() 
+            otg_hs_global: cx.device.OTG1_HS_GLOBAL,
+            otg_hs_device: cx.device.OTG1_HS_DEVICE,
+            otg_hs_pwclk: cx.device.OTG1_HS_PWRCLK,
+            usb_dm: gpiob.pb14,
+            usb_dp: gpiob.pb15,
+            prec: ccdr.peripheral.USB1OTG,
+            clocks: ccdr.clocks,
         };
+
+        let debug_gpio_pins = debug_gpio::DebugGPIO {
+            usb_interrupt: gpioc.pc8,
+            usb_audio_packet_interrupt: gpioc.pc9
+        };
+
+        let debug_handler = debug_gpio::init(debug_gpio_pins);
 
         let usb_handler = usb::init(usb_peripherals);
 

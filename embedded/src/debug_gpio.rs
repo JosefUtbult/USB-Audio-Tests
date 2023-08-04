@@ -1,16 +1,16 @@
-use stm32f4xx_hal::gpio::{
+use stm32h7xx_hal::gpio::{
 	Pin,
 	Output
 };
 
 pub struct DebugGPIO {
-	pub usb_interrupt: Pin<'C', 3>,
-    pub usb_audio_packet_interrupt: Pin<'C', 2>
+	pub usb_interrupt: Pin<'C', 8>,
+    pub usb_audio_packet_interrupt: Pin<'C', 9>
 }
 
 pub struct DebugHandler {
-	pub usb_interrupt_pin: Pin<'C', 3, Output>,
-	pub usb_audio_packet_pin: Pin<'C', 2, Output>
+	pub usb_interrupt_pin: Pin<'C', 8, Output>,
+	pub usb_audio_packet_pin: Pin<'C', 9, Output>
 }
 
 pub fn init(debug_gpio: DebugGPIO) -> DebugHandler {

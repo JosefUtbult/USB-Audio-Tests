@@ -9,7 +9,7 @@ use defmt_brtt as _; // global logger
 
 use panic_probe as _;
 
-use stm32f4xx_hal as _;
+use stm32h7xx_hal as hal;
 
 // same panicking *behavior* as `panic-probe` but doesn't print a panic message
 // this prevents the panic message being printed *twice* when `defmt::panic` is invoked

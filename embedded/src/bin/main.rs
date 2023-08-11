@@ -88,13 +88,6 @@ mod app {
             clocks: ccdr.clocks,
         };
 
-        let debug_gpio_pins = debug_gpio::DebugGPIO {
-            usb_interrupt: gpioc.pc8,
-            usb_audio_packet_interrupt: gpioc.pc9
-        };
-
-        let debug_handler = debug_gpio::init(debug_gpio_pins);
-
         let usb_handler = usb::init(usb_peripherals);
 
         let debug_gpio = debug_gpio::DebugGPIO {

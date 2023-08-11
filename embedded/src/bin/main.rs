@@ -80,7 +80,7 @@ mod app {
 
         let debug_handler = debug_gpio::init(debug_gpio);
 
-        USB_interrupt::spawn().ok();
+        //USB_interrupt::spawn().ok();
 
         (
             Shared {
@@ -103,13 +103,18 @@ mod app {
             continue;
         }
     }
-
+    //#[task(
+        //priority = 5,
+        //local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
+    //)]
     #[task(
-        priority = 1,
+        binds= OTG_FS,
+        priority = 5,
         local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
     )]
-    async fn USB_interrupt(cx: USB_interrupt::Context) {
-        loop {
+    fn USB_interrupt(cx: USB_interrupt::Context) {
+    //async fn USB_interrupt(cx: USB_interrupt::Context) {
+        //loop {
             debug_gpio::toggle_usb_interrupt(cx.local.debug_handler);
             if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
                 let mut buf = [0u8; usb::USB_BUFFER_SIZE];
@@ -124,7 +129,7 @@ mod app {
                     }
                 }
             }
-            Systick::delay(100.nanos()).await;
-        }
+			//Systick::delay(100.nanos()).await;
+        //}
     }
 }

@@ -73,7 +73,7 @@ mod app {
 
         let serial = cx.device
             .USART3
-            .serial((tx, rx), 19_200.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+            .serial((tx, rx), 921_600.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
             .unwrap();
 
         let (tx, _rx) = serial.split();
@@ -144,11 +144,11 @@ mod app {
                 let mut buf = [0u8; usb::USB_BUFFER_SIZE];
                 if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
                     debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
-                    writeln!(cx.local.tx, "{len}").unwrap();
+                    // writeln!(cx.local.tx, "{len}").unwrap();
                     for i in 0..len/2 {
                         let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
                         if val != 0 {
-                            writeln!(cx.local.tx, "{val}").unwrap();
+                            // writeln!(cx.local.tx, "{val}").unwrap();
                         }
                     }
                 }

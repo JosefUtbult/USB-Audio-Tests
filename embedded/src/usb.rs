@@ -73,7 +73,7 @@ pub fn init(usb_peripherals: USBPeripherals) -> USBHandler<'static>{
 			// Signed 16 bit little endian
 			Format::S16le,
 			1,
-			&[48000],
+			&[8000],
 			TerminalType::OutSpeaker).unwrap())
 		.build(unsafe { USB_BUS.as_ref().unwrap() })
 		.unwrap();

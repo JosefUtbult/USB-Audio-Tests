@@ -114,18 +114,12 @@ mod app {
             if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
                 debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
                 writeln!(cx.local.tx, "{len}").unwrap();
-                for i in 0..len {
-                    // Log all samples into a buffer until it is full,
-                    // and then dump the buffer over serial for recording
-                    if cx.local.buffer.is_full() {
-                        cx.local.tx.bwrite_all(cx.local.buffer).unwrap();
-                        cx.local.buffer.clear();
-                        
-                    }
-                    else {
-                        cx.local.buffer.push(buf[i]).unwrap();
-                    }
-                }
+                // for i in 0..len/2 {
+                //     let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
+                //     if val != 0 {
+                //         // writeln!(cx.local.tx, "{val}").unwrap();
+                //     }
+                // }
             }
         }
     }

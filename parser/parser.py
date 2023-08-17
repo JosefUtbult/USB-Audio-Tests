@@ -68,7 +68,10 @@ def generate_packet_size_plot(args, ax):
         if instance[1] != '\\n':
             msg += instance[1]
         else:
-            packet_size_data.append([timestamp, int(msg)])
+            try:
+                packet_size_data.append([timestamp, int(msg)])
+            except:
+                print(f"Unable to cast value: {msg}")
             msg = ''
 
     # Create arrays for x and y axis
@@ -87,7 +90,7 @@ def generate_packet_size_plot(args, ax):
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
-    ax.set_ylim(280, 295)
+    # ax.set_ylim(280, 295)
 
     # Set labels
     ax.set_xlabel("Time (ms)")

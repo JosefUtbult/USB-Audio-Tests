@@ -1,0 +1,6 @@
+[submodule "dependencies/usbd-audio"]
+	path = dependencies/usbd-audio
+	url = git@github.com:JosefUtbult/usbd-audio.git
+[submodule "dependencies/synopsys-usb-otg"]
+	path = dependencies/synopsys-usb-otg
+	url = git@github.com:kiffie/synopsys-usb-otg.git

@@ -88,14 +88,18 @@ mod app {
             clocks: ccdr.clocks,
         };
 
-        let usb_handler = usb::init(usb_peripherals);
-
-        let debug_gpio = debug_gpio::DebugGPIO {
-            usb_interrupt: gpioc.pc3,
-            usb_audio_packet_interrupt: gpioc.pc2
+        let debug_gpio_pins = debug_gpio::DebugGPIO {
+            usb_interrupt: gpiob.pb8,
+            usb_audio_packet_interrupt: gpiob.pb9
         };
 
-        let debug_handler = debug_gpio::init(debug_gpio);
+        let mut debug_handler = debug_gpio::init(debug_gpio_pins);
+
+        let usb_handler = usb::init(usb_peripherals);
+        for _ in 0..2{
+            debug_gpio::toggle_usb_interrupt(&mut debug_handler);
+            debug_gpio::toggle_usb_audio_packet_interrupt(&mut debug_handler);
+        } 
 
         //USB_interrupt::spawn().ok();
 
@@ -125,7 +129,7 @@ mod app {
         //local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
     //)]
     #[task(
-        binds= OTG_FS,
+        binds= OTG_HS,
         priority = 5,
         local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
     )]
@@ -137,11 +141,11 @@ mod app {
                 let mut buf = [0u8; usb::USB_BUFFER_SIZE];
                 if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
                     debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
-                    // writeln!(cx.local.tx, "{len}").unwrap();
+                    writeln!(cx.local.tx, "{len}").unwrap();
                     for i in 0..len/2 {
                         let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
                         if val != 0 {
-                            // writeln!(cx.local.tx, "{val}").unwrap();
+                            writeln!(cx.local.tx, "{val}").unwrap();
                         }
                     }
                 }

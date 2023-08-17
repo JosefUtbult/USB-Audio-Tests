@@ -4,13 +4,13 @@ use stm32h7xx_hal::gpio::{
 };
 
 pub struct DebugGPIO {
-	pub usb_interrupt: Pin<'C', 8>,
-    pub usb_audio_packet_interrupt: Pin<'C', 9>
+	pub usb_interrupt: Pin<'B', 8>,
+    pub usb_audio_packet_interrupt: Pin<'B', 9>
 }
 
 pub struct DebugHandler {
-	pub usb_interrupt_pin: Pin<'C', 8, Output>,
-	pub usb_audio_packet_pin: Pin<'C', 9, Output>
+	pub usb_interrupt_pin: Pin<'B', 8, Output>,
+	pub usb_audio_packet_pin: Pin<'B', 9, Output>
 }
 
 pub fn init(debug_gpio: DebugGPIO) -> DebugHandler {

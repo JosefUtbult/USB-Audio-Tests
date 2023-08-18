@@ -23,7 +23,8 @@ usb-device = { version = "0.2.8", features = ["control-buffer-256"] }
 usbd-audio = { path = "../dependencies/usbd-audio" }
 
 [patch.crates-io]
-synopsys-usb-otg = { path = "../dependencies/synopsys-usb-otg" }
+# synopsys-usb-otg = { path = "../dependencies/synopsys-usb-otg" }
+synopsys-usb-otg = { git = "https://github.com/kiffie/synopsys-usb-otg.git", branch = "iso-ep" }
 
 # cargo build/run
 [profile.dev]

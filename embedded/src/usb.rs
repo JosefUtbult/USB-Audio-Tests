@@ -10,7 +10,7 @@ use usbd_audio::{
 	AudioClassBuilder, 
 	StreamConfig, 
 	TerminalType, 
-	Format, ChannelConfiguration
+	Format
 };
 
 #[allow(unused_imports)]
@@ -72,7 +72,6 @@ pub fn init(usb_peripherals: USBPeripherals) -> USBHandler<'static>{
 		// Signed 16 bit little endian
 		Format::S16le,
 		1,
-		ChannelConfiguration::CenterFront.into(),
 		&[8000],
 		// &[48000],
 		TerminalType::OutSpeaker).unwrap())

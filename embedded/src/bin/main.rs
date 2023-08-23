@@ -13,14 +13,17 @@ mod app {
     #[allow(unused_imports)]
     use usb_audio_tests::*;
     use usb_audio_tests::debug_gpio;
+    use usb_audio_tests::codec;
     
     use super::*;
+
     #[allow(unused_imports)]
     use hal::{
         prelude::*,        
+        stm32,
         gpio::{Output, PushPull, gpioe::PE1},
         rcc::rec::UsbClkSel,
-        usb_hs::{UsbBus, USB1}
+        usb_hs::{UsbBus, USB1},
     };
 
     use rtic_monotonics::systick::*;
@@ -32,7 +35,9 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
-        // TODO: Add resources
+        // TODO: Move to local
+        #[lock_free]
+        codec_container: codec::SaiContainer
     }
 
     // Local resources go here
@@ -56,17 +61,23 @@ mod app {
         let pwrcfg = pwr.freeze();
 
         // RCC
+        // TODO: Look over clock configuration
         let rcc = cx.device.RCC.constrain();
-        let mut ccdr = rcc.sys_ck(80.MHz()).freeze(pwrcfg, &cx.device.SYSCFG);
+        let mut ccdr = rcc
+            .sys_ck(80.MHz())
+            // Used for I2S master clock
+            .pll3_p_ck(codec::PLL3_P_HZ)
+            .freeze(pwrcfg, &cx.device.SYSCFG);
 
         // 48MHz CLOCK
         let _ = ccdr.clocks.hsi48_ck().expect("HSI48 must run");
         ccdr.peripheral.kernel_usb_clk_mux(UsbClkSel::Hsi48);
 
-        // TODO: This might need to changa
-        // let gpioa = cx.device.GPIOA.split(ccdr.peripheral.GPIOA); 
+        let gpioa = cx.device.GPIOA.split(ccdr.peripheral.GPIOA); 
         let gpiob = cx.device.GPIOB.split(ccdr.peripheral.GPIOB); 
         let gpioc = cx.device.GPIOC.split(ccdr.peripheral.GPIOC);
+        let gpiod = cx.device.GPIOD.split(ccdr.peripheral.GPIOD);
+        let gpioe = cx.device.GPIOE.split(ccdr.peripheral.GPIOE);
 
         let tx = gpioc.pc10.into_alternate();
         let rx = gpioc.pc11.into_alternate();
@@ -93,19 +104,38 @@ mod app {
             usb_audio_packet_interrupt: gpiob.pb9
         };
 
-        let mut debug_handler = debug_gpio::init(debug_gpio_pins);
-
+        let debug_handler = debug_gpio::init(debug_gpio_pins);
         let usb_handler = usb::init(usb_peripherals);
-        for _ in 0..2{
-            debug_gpio::toggle_usb_interrupt(&mut debug_handler);
-            debug_gpio::toggle_usb_audio_packet_interrupt(&mut debug_handler);
-        } 
 
-        //USB_interrupt::spawn().ok();
+        let codec = codec::Codec {
+            reset: gpiob.pb11.into(),
+            sai1_mclk: gpioe.pe2,
+            sai1_sck: gpioe.pe5,
+            sai1_lrclk: gpioe.pe4,
+            sai1_dout: gpioe.pe6,
+            sai1_din: gpioe.pe3,
+            sai2_sck: gpiod.pd13,
+            sai2_lrckl: gpiod.pd12,
+            sai2_mclk: gpioe.pe0,
+            sai2_dout: gpiod.pd11,
+            sai2_din: gpioa.pa0,
+            i2c1_scl: gpiob.pb6,
+            i2c1_sda: gpiob.pb7,
+            sai1_rec: ccdr.peripheral.SAI1,
+            sai2_rec: ccdr.peripheral.SAI2,
+            sai1_dev: cx.device.SAI1,
+            sai2_dev: cx.device.SAI2,
+            clocks: ccdr.clocks,
+            scb: cx.core.SCB,
+            i2c1: cx.device.I2C1,
+            i2c1_peripheral: ccdr.peripheral.I2C1,
+        };
+
+        let codec_container = codec::init(codec);
 
         (
             Shared {
-                // Initialization of shared resources go here
+                codec_container: codec_container
             },
             Local {
                 tx,
@@ -113,6 +143,20 @@ mod app {
                 debug_handler
             },
         )
+    }
+
+    #[task(binds = SAI1, shared = [codec_container] )]
+    fn passthru1(cx: passthru1::Context) {
+        if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.0) {
+            hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.0, left, right).unwrap();
+        }
+    }
+
+    #[task(binds = SAI2, shared = [codec_container] )]
+    fn passthru2(cx: passthru2::Context) {
+        if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.1) {
+            hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.1, left, right).unwrap();
+        }
     }
 
     // Optional idle, can be removed if not needed.

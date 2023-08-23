@@ -3,6 +3,7 @@
 
 pub mod usb;
 pub mod debug_gpio;
+pub mod codec;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 use defmt_brtt as _; // global logger

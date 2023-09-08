@@ -54,6 +54,7 @@ macro_rules! i2c_error_to_string {
     };
 }
 
+#[allow(dead_code)]
 fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'B', 11, Output>) {
     
     // Reset the codec chip
@@ -228,6 +229,7 @@ fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'B', 11,
 
 pub fn init(mut codec_handler: Codec) -> SaiContainer {
 
+    #[allow(unused)]
     let mut i2c1 = codec_handler.i2c1.i2c(
         (
             codec_handler.i2c1_scl.into_alternate().set_open_drain(), 
@@ -236,7 +238,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
         &codec_handler.clocks
     );
 
-    codec_setup(&mut i2c1, codec_handler.reset);
+    // codec_setup(&mut i2c1, codec_handler.reset);
 
     // Use PLL3_P for the SAI1 clock
     let sai1_rec = codec_handler.sai1_rec.kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::Pll3P);
@@ -253,7 +255,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
 
     let sai2_tx_config = 
         hal::sai::I2SChanConfig::new(hal::sai::I2SDir::Tx)
-        .set_sync_type(hal::sai::I2SSync::External)
+        .set_sync_type(hal::sai::I2SSync::Internal)
         .set_frame_sync_active_high(true);
 
     let sai2_rx_config = 
@@ -278,7 +280,6 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     );
 
     let mut audio1 = codec_handler.sai1_dev.i2s_ch_a(
-        // sai1_pins,
         sai1_pins,
         AUDIO_SAMPLE_HZ,
         hal::sai::I2SDataSize::BITS_24,
@@ -300,6 +301,9 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     // Sound breaks up without this enabled
     codec_handler.scb.enable_icache();
 
+    // Try to synchronize the second SAI instance with the first
+    audio2.set_sync_input(0);
+
     audio1.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
     audio2.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
     audio1.enable();
@@ -316,8 +320,11 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     // If there is no data to transmit in the FIFO, 0 values are then sent in the audio frame
     // with an underrun flag generation.
     // From the reference manual (rev7 page 2259)
+
+    // A "word" is a u32
     audio1.try_send(0, 0).unwrap();
     audio2.try_send(0, 0).unwrap();
+
 
     (audio1, audio2)
 }

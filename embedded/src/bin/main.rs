@@ -10,6 +10,7 @@ use stm32h7xx_hal as hal;
     dispatchers = [EXTI0, EXTI1, EXTI2]
 )]
 mod app {
+    // use hal::gpio;
     #[allow(unused_imports)]
     use usb_audio_tests::*;
     use usb_audio_tests::debug_gpio;
@@ -27,7 +28,7 @@ mod app {
     };
 
     use rtic_monotonics::systick::*;
-    use heapless::Vec;
+    // use heapless::Vec;
 
     #[allow(unused_imports)]
     use core::fmt::Write; // for pretty formatting of the serial output
@@ -35,9 +36,10 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
-        // TODO: Move to local
         #[lock_free]
-        codec_container: codec::SaiContainer
+        codec_container: codec::SaiContainer,
+
+        debug_handler: debug_gpio::DebugHandler
     }
 
     // Local resources go here
@@ -45,7 +47,6 @@ mod app {
     struct Local {
         tx: hal::serial::Tx<hal::stm32::USART3>,
         usb_handler: usb::USBHandler<'static>,
-        debug_handler: debug_gpio::DebugHandler
     }
 
     #[init]
@@ -67,18 +68,21 @@ mod app {
             .sys_ck(80.MHz())
             // Used for I2S master clock
             .pll3_p_ck(codec::PLL3_P_HZ)
+            .pll1_q_ck(codec::PLL3_P_HZ)
             .freeze(pwrcfg, &cx.device.SYSCFG);
 
         // 48MHz CLOCK
         let _ = ccdr.clocks.hsi48_ck().expect("HSI48 must run");
         ccdr.peripheral.kernel_usb_clk_mux(UsbClkSel::Hsi48);
 
+        // GPIO setup
         let gpioa = cx.device.GPIOA.split(ccdr.peripheral.GPIOA); 
         let gpiob = cx.device.GPIOB.split(ccdr.peripheral.GPIOB); 
         let gpioc = cx.device.GPIOC.split(ccdr.peripheral.GPIOC);
         let gpiod = cx.device.GPIOD.split(ccdr.peripheral.GPIOD);
         let gpioe = cx.device.GPIOE.split(ccdr.peripheral.GPIOE);
 
+        // USART setup
         let tx = gpioc.pc10.into_alternate();
         let rx = gpioc.pc11.into_alternate();
 
@@ -89,6 +93,7 @@ mod app {
 
         let (tx, _rx) = serial.split();
 
+        // USB setup
         let usb_peripherals = usb::USBPeripherals {
             otg_hs_global: cx.device.OTG1_HS_GLOBAL,
             otg_hs_device: cx.device.OTG1_HS_DEVICE,
@@ -99,14 +104,19 @@ mod app {
             clocks: ccdr.clocks,
         };
 
+        let usb_handler = usb::init(usb_peripherals);
+
+        // Debug pins setup
         let debug_gpio_pins = debug_gpio::DebugGPIO {
             usb_interrupt: gpiob.pb8,
-            usb_audio_packet_interrupt: gpiob.pb9
+            usb_audio_packet_interrupt: gpiob.pb9,
+            codec_1_interrupt: gpioa.pa5,
+            codec_2_interrupt: gpioa.pa6
         };
 
         let debug_handler = debug_gpio::init(debug_gpio_pins);
-        let usb_handler = usb::init(usb_peripherals);
 
+        // Codec setup
         let codec = codec::Codec {
             reset: gpiob.pb11.into(),
             sai1_mclk: gpioe.pe2,
@@ -135,28 +145,100 @@ mod app {
 
         (
             Shared {
-                codec_container: codec_container
+                codec_container: codec_container,
+                debug_handler
             },
             Local {
                 tx,
                 usb_handler,
-                debug_handler
             },
         )
     }
 
-    #[task(binds = SAI1, shared = [codec_container] )]
-    fn passthru1(cx: passthru1::Context) {
+    #[task(
+        binds = SAI1, 
+        priority = 6,
+        shared = [
+            codec_container,
+            debug_handler
+        ],
+        local = [
+            counter: u8 = 0
+        ]
+    )]
+    fn passthru1(mut cx: passthru1::Context) {
+        *cx.local.counter += 1;
+        if *cx.local.counter >= 48 {
+            *cx.local.counter = 0;
+
+            cx.shared.debug_handler.lock(|debug_handler| {
+                debug_gpio::toggle_codec_1_interrupt(debug_handler);
+            });
+        }
         if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.0) {
             hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.0, left, right).unwrap();
         }
     }
 
-    #[task(binds = SAI2, shared = [codec_container] )]
-    fn passthru2(cx: passthru2::Context) {
+    #[task(
+        binds = SAI2, 
+        priority = 6,
+        shared = [
+            codec_container,
+            debug_handler
+        ],
+        local = [
+            counter: u8 = 0
+        ]
+    )]
+    fn passthru2(mut cx: passthru2::Context) {
+        *cx.local.counter += 1;
+        if *cx.local.counter >= 48 {
+            *cx.local.counter = 0;
+
+            cx.shared.debug_handler.lock(|debug_handler| {
+                debug_gpio::toggle_codec_2_interrupt(debug_handler);
+            });
+        }
+
         if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.1) {
             hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.1, left, right).unwrap();
         }
+    } 
+    
+    #[task(
+        binds= OTG_HS,
+        priority = 5,
+        local = [
+            tx, 
+            usb_handler, 
+            // buffer: Vec<u8, 0x1000> = Vec::new()
+        ],
+        shared = [
+            debug_handler, 
+        ]
+    )]
+    fn USB_interrupt(mut cx: USB_interrupt::Context) {
+        cx.shared.debug_handler.lock(|debug_handler| {
+            debug_gpio::toggle_usb_interrupt(debug_handler);
+        });
+        if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
+            let mut buf = [0u8; usb::USB_BUFFER_SIZE];
+            if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
+                cx.shared.debug_handler.lock(|debug_handler| {
+                    debug_gpio::toggle_usb_audio_packet_interrupt(debug_handler);
+                });
+                writeln!(cx.local.tx, "{len}").unwrap();
+                // for i in 0..len/2 {
+                //     let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
+                //     if val != 0 {
+                //         writeln!(cx.local.tx, "{val}").unwrap();
+                //     }
+                // }
+            }
+        }
+
+        cx.local.usb_handler.usb_audio.write_synch_interrupt(&[230]).ok();
     }
 
     // Optional idle, can be removed if not needed.
@@ -167,34 +249,5 @@ mod app {
         loop {
             continue;
         }
-    }
-    //#[task(
-        //priority = 5,
-        //local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
-    //)]
-    #[task(
-        binds= OTG_HS,
-        priority = 5,
-        local = [tx, usb_handler, debug_handler, buffer: Vec<u8, 0x1000> = Vec::new()]
-    )]
-    fn USB_interrupt(cx: USB_interrupt::Context) {
-    //async fn USB_interrupt(cx: USB_interrupt::Context) {
-        //loop {
-            debug_gpio::toggle_usb_interrupt(cx.local.debug_handler);
-            if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
-                let mut buf = [0u8; usb::USB_BUFFER_SIZE];
-                if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
-                    debug_gpio::toggle_usb_audio_packet_interrupt(cx.local.debug_handler);
-                    writeln!(cx.local.tx, "{len}").unwrap();
-                    for i in 0..len/2 {
-                        let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
-                        if val != 0 {
-                            writeln!(cx.local.tx, "{val}").unwrap();
-                        }
-                    }
-                }
-            }
-			//Systick::delay(100.nanos()).await;
-        //}
     }
 }

@@ -15,7 +15,7 @@ use usbd_audio::{
 
 #[allow(unused_imports)]
 use hal::{
-	prelude::*,        
+	prelude::*,
 	gpio::{Output, PushPull, gpioe::PE1},
 	rcc::{CoreClocks, rec::UsbClkSel},
 	usb_hs::{UsbBus, USB1}
@@ -72,7 +72,7 @@ pub fn init(usb_peripherals: USBPeripherals) -> USBHandler<'static>{
 		// Signed 16 bit little endian
 		Format::S16le,
 		1,
-		&[8000],
+		&[48000],
 		// &[48000],
 		TerminalType::OutSpeaker).unwrap())
 	.build(usb_bus)

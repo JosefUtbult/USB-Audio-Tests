@@ -304,10 +304,10 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     // Try to synchronize the second SAI instance with the first
     audio2.set_sync_input(0);
 
-    audio1.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
-    audio2.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
-    audio1.enable();
-    audio2.enable();
+    // audio1.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
+    // audio2.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
+    // audio1.enable();
+    // audio2.enable();
 
     // Jump start audio
     // Each of the audio blocks in the SAI are enabled by SAIEN bit in the SAI_xCR1 register.

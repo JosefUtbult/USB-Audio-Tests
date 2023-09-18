@@ -17,6 +17,7 @@ mod app {
     use usb_audio_tests::codec;
     
     use super::*;
+    use num_traits::real::Real;
 
     #[allow(unused_imports)]
     use hal::{
@@ -38,20 +39,24 @@ mod app {
     struct Shared {
         #[lock_free]
         codec_container: codec::SaiContainer,
-
         debug_handler: debug_gpio::DebugHandler
     }
 
     // Local resources go here
     #[local]
     struct Local {
-        tx: hal::serial::Tx<hal::stm32::USART3>,
+        tx1: hal::serial::Tx<hal::stm32::USART3>,
+        tx2: hal::serial::Tx<hal::stm32::USART2>,
         usb_handler: usb::USBHandler<'static>,
+    }
+
+    fn format_buffer_length(integer: u16, fraction: u16) -> [u8; 3] {
+        [(integer >> 2) as u8, (integer << 6) as u8 | (fraction >> 4) as u8, (fraction << 4) as u8]
     }
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local) {
-        defmt::info!("init");
+        defmt::info!("Init");
         
         // Initialize the monotonic timer at 8 MHz
         let systick_mono_token = rtic_monotonics::create_systick_token!();
@@ -83,15 +88,23 @@ mod app {
         let gpioe = cx.device.GPIOE.split(ccdr.peripheral.GPIOE);
 
         // USART setup
-        let tx = gpioc.pc10.into_alternate();
-        let rx = gpioc.pc11.into_alternate();
+        let tx1 = gpioc.pc10.into_alternate();
+        let rx1 = gpioc.pc11.into_alternate();
+        let tx2 = gpiod.pd5.into_alternate();
+        let rx2 = gpiod.pd6.into_alternate();
 
-        let serial = cx.device
+        let serial1 = cx.device
             .USART3
-            .serial((tx, rx), 921_600.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
+            .serial((tx1, rx1), 921_600.bps(), ccdr.peripheral.USART3, &ccdr.clocks)
             .unwrap();
 
-        let (tx, _rx) = serial.split();
+        let serial2 = cx.device
+            .USART2
+            .serial((tx2, rx2), 921_600.bps(), ccdr.peripheral.USART2, &ccdr.clocks)
+            .unwrap();
+
+        let (tx1, _rx1) = serial1.split();
+        let (tx2, _rx2) = serial2.split();
 
         // USB setup
         let usb_peripherals = usb::USBPeripherals {
@@ -149,7 +162,8 @@ mod app {
                 debug_handler
             },
             Local {
-                tx,
+                tx1,
+                tx2,
                 usb_handler,
             },
         )
@@ -210,9 +224,12 @@ mod app {
         binds= OTG_HS,
         priority = 5,
         local = [
-            tx, 
+            tx1,
+            tx2, 
             usb_handler, 
             // buffer: Vec<u8, 0x1000> = Vec::new()
+            // counter: u16 = 0
+            counter: f64 = 0.0
         ],
         shared = [
             debug_handler, 
@@ -228,17 +245,26 @@ mod app {
                 cx.shared.debug_handler.lock(|debug_handler| {
                     debug_gpio::toggle_usb_audio_packet_interrupt(debug_handler);
                 });
-                writeln!(cx.local.tx, "{len}").unwrap();
-                // for i in 0..len/2 {
-                //     let val: u16 = u16::from_le_bytes(buf[i*2..i*2+2].try_into().unwrap());
-                //     if val != 0 {
-                //         writeln!(cx.local.tx, "{val}").unwrap();
-                //     }
-                // }
+                writeln!(cx.local.tx1, "{len}").unwrap();
+                
+                // Simulate clock drift
+                let scaler = 1.0;
+                let modifier = 48.0 - scaler * (*cx.local.counter).sin();
+                // let modifier: f64 = 47.5 + *cx.local.counter;
+                // if modifier < 48.0 {*cx.local.counter += 0.01};
+                *cx.local.counter += 0.005;
+                // let modifier = if (*cx.local.counter > 2000) | (*cx.local.counter < 1000) {48.0} else {47.5};
+                // *cx.local.counter += 1;
+
+                // let modifier = 46.0 + *cx.local.counter;
+                // *cx.local.counter += 0.000035;
+                let integer: u16 = modifier as u16;
+                let fraction: u16 = ((modifier - modifier as i64 as f64) * 1024_f64) as u16;
+                cx.local.usb_handler.usb_audio.write_synch_interrupt(&format_buffer_length(integer, fraction)).ok();
+                // defmt::info!("{}, {}", integer, fraction);
+                writeln!(cx.local.tx2, "{modifier:.2}").unwrap();
             }
         }
-
-        cx.local.usb_handler.usb_audio.write_synch_interrupt(&[230]).ok();
     }
 
     // Optional idle, can be removed if not needed.

@@ -5,7 +5,7 @@ from matplotlib.ticker import FormatStrFormatter
 
 def generate_delta_time_plot(args, ax):
     # Read the CSV file
-    raw_file = open(args.filename)
+    raw_file = open(args.clock_speed_file)
     # Split the contents up into a list of lists
     data = [instance.split(',') for instance in raw_file.read().split('\n')]
     # Trim the first and last instances of the file, to get the data
@@ -68,7 +68,10 @@ def generate_packet_size_plot(args, ax):
         if instance[1] != '\\n':
             msg += instance[1]
         else:
-            packet_size_data.append([timestamp, int(msg)])
+            try:
+                packet_size_data.append([timestamp, int(msg)])
+            except ValueError as e:
+                print(str(e) + f" at line {len(packet_size_data)}")
             msg = ''
 
     # Create arrays for x and y axis
@@ -76,23 +79,68 @@ def generate_packet_size_plot(args, ax):
     time = [instance[0] for instance in packet_size_data]
 
     # Calculate a trendline
-    z = np.polyfit(time, size, 0)
+    z = np.polyfit(time, size, 1)
     p = np.poly1d(z)
 
     # Add a scatter plot of all readings
     ax.scatter(time, size, s=3, c='#f4a80b')
 
     # Plot a trendline
-    # ax.plot(time, p(time), c='#efd810')
+    ax.plot(time, p(time), c='#efd810')
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
     # ax.set_ylim(280, 295)
-    ax.set_ylim(92, 100)
+    # ax.set_ylim(92, 100)
 
     # Set labels
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Packet size")
+    # ax.set_title("Packet size over time")
+
+
+def generate_frame_rate_plot(args, ax):
+    frame_rate_file = open(args.frame_rate_file)
+    raw_frame_rate_data = [instance.split(',') for instance in frame_rate_file.read().split('\n')]
+    raw_frame_rate_data = raw_frame_rate_data[1:-1]
+
+    frame_rate_data = []
+    timestamp = 0
+    msg = ''
+    for instance in raw_frame_rate_data:
+        if msg == '':
+            timestamp = float(instance[0]) * 1000
+        if instance[1] != '\\n':
+            msg += instance[1]
+        else:
+            try:
+                frame_rate_data.append([timestamp, float(msg)])
+            except ValueError as e:
+                print(str(e) + f" at line {len(frame_rate_data)}")
+            msg = ''
+
+    # Create arrays for x and y axis
+    size = [instance[1] for instance in frame_rate_data]
+    time = [instance[0] for instance in frame_rate_data]
+
+    # Calculate a trendline
+    z = np.polyfit(time, size, 1)
+    p = np.poly1d(z)
+
+    # Add a scatter plot of all readings
+    ax.scatter(time, size, s=3, c='#25da81')
+
+    # Plot a trendline
+    # ax.plot(time, p(time), c='#199256')
+
+    # Make the diagram go between 0 - 4 ms, as this is the range we
+    # are interested in
+    # ax.set_ylim(280, 295)
+    # ax.set_ylim(92, 100)
+
+    # Set labels
+    ax.set_xlabel("Time (ms)")
+    ax.set_ylabel("Simulated sample rate (KHz)")
     # ax.set_title("Packet size over time")
 
 
@@ -102,22 +150,31 @@ if __name__ == '__main__':
         description='Helper program for calculating clock speed from samples'
     )
 
-    parser.add_argument('filename')
+    parser.add_argument('-c', '--clock-speed-file', required=False, help="Optional path to the file that contains the speed of the USB packet clock")
 
-    parser.add_argument('-s', '--packet_size_file', required=False, help="Optional path to file that contains the packet sizes for a sample run")
+    parser.add_argument('-s', '--packet-size-file', required=False, help="Optional path to file that contains the packet sizes for a sample run")
+
+    parser.add_argument('-f', '--frame-rate-file', required=False, help="Optional path to the file that contains the current simulated rate of the sample clock")
 
     args = parser.parse_args()
 
     plt.rcParams["font.family"] = "FreeMono"
 
-    # If a packet size file is present, open it and parse every message to get the size of each packet
+    # Make a plot with the specified number of arguments
+    plt_size = len([arg for arg in vars(args).items() if arg[1] != None])
+    fig, axes = plt.subplots(plt_size)
+
+    index = 0
+    # Parse the different plots from their specified file
+    if args.clock_speed_file:
+        generate_delta_time_plot(args, axes[index] if plt_size > 1 else axes)
+        index += 1
     if args.packet_size_file:
-        fig, axes = plt.subplots(2)
-        generate_delta_time_plot(args, axes[0])
-        generate_packet_size_plot(args, axes[1])
-    else:
-        fig, ax = plt.subplots()
-        generate_delta_time_plot(args, ax)
+        generate_packet_size_plot(args, axes[index] if plt_size > 1 else axes)
+        index += 1
+    if args.frame_rate_file:
+        generate_frame_rate_plot(args, axes[index] if plt_size > 1 else axes)
+        index += 1
             
     plt.show()
 

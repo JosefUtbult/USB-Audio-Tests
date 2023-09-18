@@ -14,6 +14,7 @@ pub const AUDIO_SAMPLE_HZ: Hertz = Hertz::from_raw(48_000);
 // Using PLL3_P for SAI1 clock
 // The rate should be equal to sample rate * 256
 // But not less than so targetting 257
+// pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
 pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
 
 pub type SaiContainer = (hal::sai::Sai<stm32::SAI1, hal::sai::I2S>, hal::sai::Sai<stm32::SAI2, hal::sai::I2S>);
@@ -279,19 +280,21 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
         Some(codec_handler.sai2_din.into_alternate())
     );
 
-    let mut audio1 = codec_handler.sai1_dev.i2s_ch_a(
+    let audio1 = codec_handler.sai1_dev.i2s_ch_a(
         sai1_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_24,
+        hal::sai::I2SDataSize::BITS_16,
+        // hal::sai::I2SDataSize::BITS_24,
         sai1_rec,
         &codec_handler.clocks,
         hal::sai::I2sUsers::new(sai1_tx_config).add_slave(sai1_rx_config),
     );
 
-    let mut audio2 = codec_handler.sai2_dev.i2s_ch_a(
+    let audio2 = codec_handler.sai2_dev.i2s_ch_a(
         sai2_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_24,
+        hal::sai::I2SDataSize::BITS_16,
+        // hal::sai::I2SDataSize::BITS_24,
         codec_handler.sai2_rec,
         &codec_handler.clocks,
         hal::sai::I2sUsers::new(sai2_tx_config).add_slave(sai2_rx_config),
@@ -302,13 +305,18 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     codec_handler.scb.enable_icache();
 
     // Try to synchronize the second SAI instance with the first
-    audio2.set_sync_input(0);
+    // audio2.set_sync_input(0);
 
-    // audio1.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
-    // audio2.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
-    // audio1.enable();
-    // audio2.enable();
+    (audio1, audio2)
+}
 
+pub fn enable(sai_container: &mut SaiContainer) {
+    sai_container.0.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
+    sai_container.0.enable();
+
+    sai_container.1.listen(hal::sai::SaiChannel::ChannelB, hal::sai::Event::Data);
+    sai_container.1.enable();
+    
     // Jump start audio
     // Each of the audio blocks in the SAI are enabled by SAIEN bit in the SAI_xCR1 register.
     // As soon as this bit is active, the transmitter or the receiver is sensitive
@@ -320,11 +328,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     // If there is no data to transmit in the FIFO, 0 values are then sent in the audio frame
     // with an underrun flag generation.
     // From the reference manual (rev7 page 2259)
-
-    // A "word" is a u32
-    audio1.try_send(0, 0).unwrap();
-    audio2.try_send(0, 0).unwrap();
-
-
-    (audio1, audio2)
+    
+    sai_container.0.try_send(0, 0).unwrap();
+    // sai_container.1.try_send(0, 0).unwrap();
 }

@@ -4,19 +4,27 @@
 
 use usb_audio_tests as _; // global logger + panicking-behavior + memory layout
 use stm32h7xx_hal as hal;
+use heapless::spsc::{Queue, Producer, Consumer};
+
+// const FM_MODIFIER: u8 = 8;
+type QueueType = [u32; 2];
+const QUEUE_SIZE: usize = 48 * 5;
+
+const TEST: bool = true;
 
 #[rtic::app(
     device = hal::pac,
     dispatchers = [EXTI0, EXTI1, EXTI2]
 )]
 mod app {
-    // use hal::gpio;
+    use hal::device::quadspi::cr::DFM_R;
     #[allow(unused_imports)]
     use usb_audio_tests::*;
     use usb_audio_tests::debug_gpio;
     use usb_audio_tests::codec;
     
     use super::*;
+    #[allow(unused_imports)]
     use num_traits::real::Real;
 
     #[allow(unused_imports)]
@@ -37,27 +45,49 @@ mod app {
     // Shared resources go here
     #[shared]
     struct Shared {
-        #[lock_free]
-        codec_container: codec::SaiContainer,
-        debug_handler: debug_gpio::DebugHandler
+        debug_handler: debug_gpio::DebugHandler,
+        fs_counter: u16,
     }
-
+    
     // Local resources go here
     #[local]
     struct Local {
+        usb_out_producer: Producer<'static, QueueType, QUEUE_SIZE>,
+        usb_out_consumer: Consumer<'static, QueueType, QUEUE_SIZE>,
+        codec_container: codec::SaiContainer,
         tx1: hal::serial::Tx<hal::stm32::USART3>,
         tx2: hal::serial::Tx<hal::stm32::USART2>,
         usb_handler: usb::USBHandler<'static>,
     }
 
-    fn format_buffer_length(integer: u16, fraction: u16) -> [u8; 3] {
-        [(integer >> 2) as u8, (integer << 6) as u8 | (fraction >> 4) as u8, (fraction << 4) as u8]
+    fn sample_rate_to_buffer(rate: f64, debug: bool) -> [u8; 3] {
+        let integer: u16 = rate as u16;
+        let fraction: f64 = rate - rate as i64 as f64;
+        let base_2_fraction: u16 = (fraction * 1024_f64) as u16;
+        if debug {
+            defmt::info!("Integer: {}", integer);
+            defmt::info!("Base 2 integer: {:#012b}", integer);
+            defmt::info!("Fraction: {}", fraction);
+            defmt::info!("Base 2 fraction: {:#012b}", base_2_fraction);
+        }
+        [(integer >> 2) as u8, (integer << 6) as u8 | (base_2_fraction >> 4) as u8, (base_2_fraction << 4) as u8]
     }
 
-    #[init]
+    #[init(
+        local = [
+            usb_out_queue: Queue<QueueType, QUEUE_SIZE> = Queue::new()
+        ]
+    )]
     fn init(cx: init::Context) -> (Shared, Local) {
         defmt::info!("Init");
+        defmt::info!("Res: {:#010b}", sample_rate_to_buffer(513.5009765625, true));
         
+        let (mut usb_out_producer, usb_out_consumer) = cx.local.usb_out_queue.split();
+
+        // for i in 0..QUEUE_SIZE / 2 {
+        //     usb_out_producer.enqueue([0, 0]).ok();
+        // }
+
         // Initialize the monotonic timer at 8 MHz
         let systick_mono_token = rtic_monotonics::create_systick_token!();
         Systick::start(cx.core.SYST, 48_000_000, systick_mono_token); // default STM32F4 clock rate at 8 MHz
@@ -117,7 +147,7 @@ mod app {
             clocks: ccdr.clocks,
         };
 
-        let usb_handler = usb::init(usb_peripherals);
+        let mut usb_handler = usb::init(usb_peripherals);
 
         // Debug pins setup
         let debug_gpio_pins = debug_gpio::DebugGPIO {
@@ -127,7 +157,7 @@ mod app {
             codec_2_interrupt: gpioa.pa6
         };
 
-        let debug_handler = debug_gpio::init(debug_gpio_pins);
+        let mut debug_handler = debug_gpio::init(debug_gpio_pins);
 
         // Codec setup
         let codec = codec::Codec {
@@ -154,14 +184,47 @@ mod app {
             i2c1_peripheral: ccdr.peripheral.I2C1,
         };
 
-        let codec_container = codec::init(codec);
+        let mut codec_container = codec::init(codec);
+
+        let mut buf = [0u8; usb::USB_BUFFER_SIZE];
+        loop {
+            if usb_handler.usb_dev.poll(&mut [&mut usb_handler.usb_audio]) {
+                if let Ok(len) = usb_handler.usb_audio.read(&mut buf) {
+                    debug_gpio::toggle_usb_interrupt(&mut debug_handler);
+                    for i in 0..len/2 {
+                        let sample: u32 = (buf[i * 2] as u32) << 8 | buf[i * 2 + 1] as u32;
+                        match usb_out_producer.enqueue([sample, sample]).ok() {
+                            Some(_res) => {},
+                            None => {
+                                debug_gpio::toggle_usb_audio_packet_interrupt(&mut debug_handler);
+                                if TEST {
+                                    defmt::info!("Unable to push sample from USB");
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+                else {
+                    // Kickstart the sync interrupt
+                    usb_handler.usb_audio.write_synch_interrupt(&sample_rate_to_buffer(0.0, false)).ok();
+                }
+            }
+        }
+
+        // Enable SAI interrupt
+        codec::enable(&mut codec_container);
+        defmt::info!("Starting");
 
         (
             Shared {
-                codec_container: codec_container,
-                debug_handler
+                debug_handler,
+                fs_counter: 0,
             },
             Local {
+                usb_out_producer,
+                usb_out_consumer,
+                codec_container: codec_container,
                 tx1,
                 tx2,
                 usb_handler,
@@ -173,98 +236,121 @@ mod app {
         binds = SAI1, 
         priority = 6,
         shared = [
-            codec_container,
-            debug_handler
+            debug_handler,
+            fs_counter,
         ],
         local = [
-            counter: u8 = 0
+                codec_container,
+                usb_out_consumer,
         ]
     )]
-    fn passthru1(mut cx: passthru1::Context) {
-        *cx.local.counter += 1;
-        if *cx.local.counter >= 48 {
-            *cx.local.counter = 0;
+    fn sai_task(mut cx: sai_task::Context) {
+        // defmt::info!("Running SAI task");
 
-            cx.shared.debug_handler.lock(|debug_handler| {
-                debug_gpio::toggle_codec_1_interrupt(debug_handler);
-            });
+        cx.shared.fs_counter.lock(|fs_counter| {
+            *fs_counter += 1;
+        }); 
+        
+        cx.shared.debug_handler.lock(|debug_handler| {
+            debug_gpio::toggle_codec_1_interrupt(debug_handler);
+        });
+        
+        let _res = hal::traits::i2s::FullDuplex::try_read(&mut cx.local.codec_container.0).ok();
+        match cx.local.usb_out_consumer.dequeue() {
+            Some(_sample) => {
+                // hal::traits::i2s::FullDuplex::try_send(&mut cx.local.codec_container.0, sample[0], sample[1]).unwrap()
+            }
+            None => {
+                // defmt::info!("Unable to get sample from USB");
+                // hal::traits::i2s::FullDuplex::try_send(&mut cx.local.codec_container.0, 0, 0).unwrap();
+            }
+
         }
-        if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.0) {
-            hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.0, left, right).unwrap();
-        }
+        // if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.local.codec_container.0) {
+            // hal::traits::i2s::FullDuplex::try_send(&mut cx.local.codec_container.0, left, right).unwrap();
+        // }
     }
 
-    #[task(
-        binds = SAI2, 
-        priority = 6,
-        shared = [
-            codec_container,
-            debug_handler
-        ],
-        local = [
-            counter: u8 = 0
-        ]
-    )]
-    fn passthru2(mut cx: passthru2::Context) {
-        *cx.local.counter += 1;
-        if *cx.local.counter >= 48 {
-            *cx.local.counter = 0;
-
-            cx.shared.debug_handler.lock(|debug_handler| {
-                debug_gpio::toggle_codec_2_interrupt(debug_handler);
-            });
-        }
-
-        if let Ok((left, right)) = hal::traits::i2s::FullDuplex::try_read(&mut cx.shared.codec_container.1) {
-            hal::traits::i2s::FullDuplex::try_send(&mut cx.shared.codec_container.1, left, right).unwrap();
-        }
-    } 
-    
     #[task(
         binds= OTG_HS,
         priority = 5,
         local = [
+            usb_out_producer,
             tx1,
             tx2, 
             usb_handler, 
-            // buffer: Vec<u8, 0x1000> = Vec::new()
-            // counter: u16 = 0
-            counter: f64 = 0.0
+            counter: u16 = 0,
+            first_interrupt: bool = true
         ],
         shared = [
             debug_handler, 
+            fs_counter,
         ]
     )]
     fn USB_interrupt(mut cx: USB_interrupt::Context) {
+        let mut frame_len: Option<usize> = None;
+        let mut modifier: Option<f64> = None;
+        
         cx.shared.debug_handler.lock(|debug_handler| {
             debug_gpio::toggle_usb_interrupt(debug_handler);
         });
+
         if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
             let mut buf = [0u8; usb::USB_BUFFER_SIZE];
             if let Ok(len) = cx.local.usb_handler.usb_audio.read(&mut buf) {
                 cx.shared.debug_handler.lock(|debug_handler| {
                     debug_gpio::toggle_usb_audio_packet_interrupt(debug_handler);
                 });
-                writeln!(cx.local.tx1, "{len}").unwrap();
-                
-                // Simulate clock drift
-                let scaler = 1.0;
-                let modifier = 48.0 - scaler * (*cx.local.counter).sin();
-                // let modifier: f64 = 47.5 + *cx.local.counter;
-                // if modifier < 48.0 {*cx.local.counter += 0.01};
-                *cx.local.counter += 0.005;
-                // let modifier = if (*cx.local.counter > 2000) | (*cx.local.counter < 1000) {48.0} else {47.5};
-                // *cx.local.counter += 1;
+                if *cx.local.first_interrupt {
+                    *cx.local.first_interrupt = false;
+                }
+                frame_len = Some(len);
+                for i in 0..len/2 {
+                    let sample: u32 = (buf[i * 2] as u32) << 8 | buf[i * 2 + 1] as u32;
+                    match cx.local.usb_out_producer.enqueue([sample, sample]).ok() {
+                        Some(_res) => {},
+                        None => {
+                            // cx.shared.debug_handler.lock(|debug_handler| {
+                            //     debug_gpio::toggle_usb_audio_packet_interrupt(debug_handler);
+                            // });
+                            if TEST {
+                                defmt::info!("Unable to push sample from USB");
+                            }
+                        }
+                    }
+                }
+            }
+            // If no new data is present, the interrupt is probably caused
+            // by the Ff rate being read
+            else {
+                cx.shared.fs_counter.lock(|fs_counter| {
+                    let rate = *fs_counter as f64 - 1.0;
+                    *fs_counter = 0;
+                    if *cx.local.first_interrupt {
+                        cx.local.usb_handler.usb_audio.write_synch_interrupt(&sample_rate_to_buffer(0.0, false)).ok();
+                    }
+                    else {
+                        // let rate = 48.1;
+                        cx.local.usb_handler.usb_audio.write_synch_interrupt(&sample_rate_to_buffer(rate, false)).ok();
+                        modifier = Some(rate);
+                    }
 
-                // let modifier = 46.0 + *cx.local.counter;
-                // *cx.local.counter += 0.000035;
-                let integer: u16 = modifier as u16;
-                let fraction: u16 = ((modifier - modifier as i64 as f64) * 1024_f64) as u16;
-                cx.local.usb_handler.usb_audio.write_synch_interrupt(&format_buffer_length(integer, fraction)).ok();
-                // defmt::info!("{}, {}", integer, fraction);
-                writeln!(cx.local.tx2, "{modifier:.2}").unwrap();
+                });
+                    
+                // writeln!(cx.local.tx2, "{modifier:.2}").unwrap();
             }
         }
+        
+        if let Some(_var) = frame_len {
+            // writeln!(cx.local.tx1, "{}", var).ok();
+            writeln!(cx.local.tx1, "{}", cx.local.usb_out_producer.len()).ok();
+        }
+        
+        if let Some(var) = modifier {
+            writeln!(cx.local.tx2, "{}", var).ok();
+        }
+
+        
     }
 
     // Optional idle, can be removed if not needed.

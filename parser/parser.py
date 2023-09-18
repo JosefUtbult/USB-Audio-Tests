@@ -54,6 +54,9 @@ def generate_delta_time_plot(args, ax):
     # ax.set_title("Clock speed over time")
 
 
+def generate_general_plot(filename, ax, trendline=False):
+    pass
+
 def generate_packet_size_plot(args, ax):
     packet_size_file = open(args.packet_size_file)
     raw_packet_size_data = [instance.split(',') for instance in packet_size_file.read().split('\n')]
@@ -131,12 +134,12 @@ def generate_frame_rate_plot(args, ax):
     ax.scatter(time, size, s=3, c='#25da81')
 
     # Plot a trendline
-    # ax.plot(time, p(time), c='#199256')
+    ax.plot(time, p(time), c='#199256')
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
     # ax.set_ylim(280, 295)
-    # ax.set_ylim(92, 100)
+    ax.set_ylim(46.5, 49.5)
 
     # Set labels
     ax.set_xlabel("Time (ms)")

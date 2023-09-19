@@ -73,7 +73,6 @@ pub fn init(usb_peripherals: USBPeripherals) -> USBHandler<'static>{
 		Format::S16le,
 		1,
 		&[48000],
-		// &[48000],
 		TerminalType::OutSpeaker).unwrap())
 	.build(usb_bus)
 	.unwrap();

@@ -14,8 +14,8 @@ pub const AUDIO_SAMPLE_HZ: Hertz = Hertz::from_raw(48_000);
 // Using PLL3_P for SAI1 clock
 // The rate should be equal to sample rate * 256
 // But not less than so targetting 257
-// pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
-pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
+pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
+// pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
 
 pub type SaiContainer = (hal::sai::Sai<stm32::SAI1, hal::sai::I2S>, hal::sai::Sai<stm32::SAI2, hal::sai::I2S>);
 

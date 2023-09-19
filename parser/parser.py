@@ -54,48 +54,49 @@ def generate_delta_time_plot(args, ax):
     # ax.set_title("Clock speed over time")
 
 
-def generate_general_plot(filename, ax, trendline=False):
-    pass
+def generate_general_plot(filename, ax, format, color, trendline=False, trendline_color=None):
+    file = open(filename)
+    raw_data = [instance.split(',') for instance in file.read().split('\n')]
+    raw_data = raw_data[1:-1]
 
-def generate_packet_size_plot(args, ax):
-    packet_size_file = open(args.packet_size_file)
-    raw_packet_size_data = [instance.split(',') for instance in packet_size_file.read().split('\n')]
-    raw_packet_size_data = raw_packet_size_data[1:-1]
-
-    packet_size_data = []
+    resulting_data = []
     timestamp = 0
     msg = ''
-    for instance in raw_packet_size_data:
+    for instance in raw_data:
         if msg == '':
             timestamp = float(instance[0]) * 1000
         if instance[1] != '\\n':
             msg += instance[1]
         else:
             try:
-                packet_size_data.append([timestamp, int(msg)])
+                resulting_data.append([timestamp, format(msg)])
             except ValueError as e:
-                print(str(e) + f" at line {len(packet_size_data)}")
+                print(str(e) + f" at line {len(resulting_data)}")
             msg = ''
 
     # Create arrays for x and y axis
-    size = [instance[1] for instance in packet_size_data]
-    time = [instance[0] for instance in packet_size_data]
+    size = [instance[1] for instance in resulting_data]
+    time = [instance[0] for instance in resulting_data]
 
     # Calculate a trendline
     z = np.polyfit(time, size, 1)
     p = np.poly1d(z)
 
     # Add a scatter plot of all readings
-    ax.scatter(time, size, s=3, c='#f4a80b')
+    ax.scatter(time, size, s=3, c=color)
 
     # Plot a trendline
-    ax.plot(time, p(time), c='#efd810')
+    ax.plot(time, p(time), c=trendline_color if trendline_color is not None else color)
+
+
+def generate_packet_size_plot(args, ax):
+    generate_general_plot(args.packet_size_file, ax, int, '#f4a80b', trendline=True, trendline_color='#efd810')
 
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
     # ax.set_ylim(280, 295)
     # ax.set_ylim(92, 100)
-
+    
     # Set labels
     ax.set_xlabel("Time (ms)")
     ax.set_ylabel("Packet size")
@@ -103,39 +104,8 @@ def generate_packet_size_plot(args, ax):
 
 
 def generate_frame_rate_plot(args, ax):
-    frame_rate_file = open(args.frame_rate_file)
-    raw_frame_rate_data = [instance.split(',') for instance in frame_rate_file.read().split('\n')]
-    raw_frame_rate_data = raw_frame_rate_data[1:-1]
-
-    frame_rate_data = []
-    timestamp = 0
-    msg = ''
-    for instance in raw_frame_rate_data:
-        if msg == '':
-            timestamp = float(instance[0]) * 1000
-        if instance[1] != '\\n':
-            msg += instance[1]
-        else:
-            try:
-                frame_rate_data.append([timestamp, float(msg)])
-            except ValueError as e:
-                print(str(e) + f" at line {len(frame_rate_data)}")
-            msg = ''
-
-    # Create arrays for x and y axis
-    size = [instance[1] for instance in frame_rate_data]
-    time = [instance[0] for instance in frame_rate_data]
-
-    # Calculate a trendline
-    z = np.polyfit(time, size, 1)
-    p = np.poly1d(z)
-
-    # Add a scatter plot of all readings
-    ax.scatter(time, size, s=3, c='#25da81')
-
-    # Plot a trendline
-    ax.plot(time, p(time), c='#199256')
-
+    generate_general_plot(args.frame_rate_file, ax, float, '#25da81', trendline=True, trendline_color='#199256')
+    
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
     # ax.set_ylim(280, 295)

@@ -30,7 +30,7 @@ mod app {
     use hal::{
         prelude::*,        
         stm32,
-        gpio::{Pin, Output, PushPull, gpioe::PE1},
+        gpio::{Pin, Output, PushPull, gpioe::PE1, Edge},
         rcc::rec::UsbClkSel,
         usb_hs::{UsbBus, USB1},
     };
@@ -58,7 +58,8 @@ mod app {
         usb_interrupt_pin: debug_gpio::UsbInterruptPin,
         usb_producer_cant_push_pin: debug_gpio::UsbProducerCantPush,
         codec_consumer_cant_pull_pin: debug_gpio::CodecConsumerCantPull,
-        extra_interrupt_pin: debug_gpio::ExtraInterruptPin,
+        codec_interrupt_pin: debug_gpio::CodecInterruptPin,
+        external_interrupt_pin: Pin<'C', 13, hal::gpio::Input>
     }
 
     fn sample_rate_to_buffer(rate: f64, debug: bool) -> [u8; 3] {
@@ -111,7 +112,7 @@ mod app {
             usb_out_queue: Queue<QueueType, QUEUE_SIZE> = Queue::new()
         ]
     )]
-    fn init(cx: init::Context) -> (Shared, Local) {
+    fn init(mut cx: init::Context) -> (Shared, Local) {
         defmt::info!("Init");
         defmt::info!("Res: {:#010b}", sample_rate_to_buffer(513.5009765625, true));
         
@@ -183,14 +184,14 @@ mod app {
             usb_interrupt: gpiob.pb8,
             usb_producer_cant_push: gpiob.pb9,
             codec_consumer_cant_pull: gpioa.pa5,
-            extra_interrupt: gpioa.pa6
+            codec_interrupt: gpioa.pa6
         };
 
         let (
             usb_interrupt_pin,
             mut usb_producer_cant_push_pin,
             codec_consumer_cant_pull_pin,
-            extra_interrupt_pin, 
+            codec_interrupt_pin, 
         ) = debug_gpio::init(debug_gpio_pins);
 
         // Codec setup
@@ -220,9 +221,13 @@ mod app {
 
         let mut codec_container = codec::init(codec);
 
-        for _i in 0..3*48 {
-            usb_out_producer.enqueue([0, 0]).ok();
-        }
+        // for _i in 0..3*48 {
+        //     usb_out_producer.enqueue([0, 0]).ok();
+        // }
+
+        let mut external_interrupt_pin: Pin<'C', 13, hal::gpio::Input> = gpioc.pc13.into_floating_input();
+        hal::gpio::ExtiPin::trigger_on_edge(&mut external_interrupt_pin, &mut cx.device.EXTI, Edge::Rising);
+        hal::gpio::ExtiPin::make_interrupt_source(&mut external_interrupt_pin, &mut cx.device.SYSCFG);
 
         // Wait until the first USB frame containing samples has
         // arrived. This is to make sure that the SAI interrupts won't
@@ -247,6 +252,7 @@ mod app {
 
         // Enable SAI interrupt
         codec::enable(&mut codec_container);
+        hal::gpio::ExtiPin::enable_interrupt(&mut external_interrupt_pin, &mut cx.device.EXTI);
         defmt::info!("Starting");
 
         (
@@ -262,26 +268,50 @@ mod app {
                 usb_interrupt_pin,
                 usb_producer_cant_push_pin,
                 codec_consumer_cant_pull_pin,
-                extra_interrupt_pin, 
+                codec_interrupt_pin, 
+                external_interrupt_pin
             },
         )
     }
 
     #[task(
+        binds = EXTI15_10,
+        priority = 7,
+        shared = [
+            // fs_counter,
+        ],
+        local = [
+            external_interrupt_pin,
+            codec_consumer_cant_pull_pin,
+        ]
+    )]
+    fn fs_counter_task(mut cx: fs_counter_task::Context) {
+        cx.local.codec_consumer_cant_pull_pin.toggle();
+        // cx.shared.fs_counter.lock(|fs_counter| {
+        //     *fs_counter += 1;
+        // }); 
+
+        hal::gpio::ExtiPin::clear_interrupt_pending_bit(cx.local.external_interrupt_pin);
+    }
+
+    #[task(
         binds = SAI1, 
         priority = 6,
-        shared = [
-            fs_counter,
-        ],
         local = [
             codec_container,
             usb_out_consumer,
-            codec_consumer_cant_pull_pin
+            // codec_consumer_cant_pull_pin,
+            codec_interrupt_pin
+        ],
+        shared = [
+            fs_counter
         ]
     )]
     fn sai_task(mut cx: sai_task::Context) {
         // defmt::info!("Running SAI task");
 
+        cx.local.codec_interrupt_pin.toggle();
+        
         cx.shared.fs_counter.lock(|fs_counter| {
             *fs_counter += 1;
         }); 
@@ -292,7 +322,7 @@ mod app {
                 // hal::traits::i2s::FullDuplex::try_send(&mut cx.local.codec_container.0, sample[0], sample[1]).unwrap()
             }
             None => {
-                cx.local.codec_consumer_cant_pull_pin.toggle();
+                // cx.local.codec_consumer_cant_pull_pin.toggle();
                 // defmt::info!("Unable to get sample from USB");
                 // hal::traits::i2s::FullDuplex::try_send(&mut cx.local.codec_container.0, 0, 0).unwrap();
             }
@@ -336,11 +366,11 @@ mod app {
         let mut frame_len: Option<usize> = None;
         let mut modifier: Option<f64> = None;
         
-
         // Check for an usb poll, which should have happened, as the
         // interrupt has occurred
         if cx.local.usb_handler.usb_dev.poll(&mut [&mut cx.local.usb_handler.usb_audio]) {
             cx.local.usb_interrupt_pin.toggle();
+
             // If no new data is present, the interrupt is probably caused
             // by the Ff rate being read
             if !handle_usb_poll(
@@ -351,7 +381,7 @@ mod app {
             ) {
                 let mut rate: f64 = 0.0;
                 cx.shared.fs_counter.lock(|fs_counter| {
-                    rate = *fs_counter as f64 - 1.0;
+                    rate = *fs_counter as f64;
                     *fs_counter = 0;
                 });
 
@@ -366,7 +396,7 @@ mod app {
         }
         
         if let Some(var) = modifier {
-            writeln!(cx.local.serial.tx3, "{}", var).ok();
+            writeln!(cx.local.serial.tx3, "{:.2}", var).ok();
         }
         
     }

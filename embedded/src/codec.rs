@@ -13,9 +13,9 @@ use hal::{
 pub const AUDIO_SAMPLE_HZ: Hertz = Hertz::from_raw(48_000);
 // Using PLL3_P for SAI1 clock
 // The rate should be equal to sample rate * 256
-// But not less than so targetting 257
-pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
-// pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
+// But not less than so targeting 257
+// pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
+pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
 
 pub type SaiContainer = (hal::sai::Sai<stm32::SAI1, hal::sai::I2S>, hal::sai::Sai<stm32::SAI2, hal::sai::I2S>);
 
@@ -283,7 +283,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     let audio1 = codec_handler.sai1_dev.i2s_ch_a(
         sai1_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_16,
+        hal::sai::I2SDataSize::BITS_32,
         // hal::sai::I2SDataSize::BITS_24,
         sai1_rec,
         &codec_handler.clocks,
@@ -293,7 +293,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     let audio2 = codec_handler.sai2_dev.i2s_ch_a(
         sai2_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_16,
+        hal::sai::I2SDataSize::BITS_32,
         // hal::sai::I2SDataSize::BITS_24,
         codec_handler.sai2_rec,
         &codec_handler.clocks,

@@ -15,12 +15,13 @@ pub const AUDIO_SAMPLE_HZ: Hertz = Hertz::from_raw(48_000);
 // The rate should be equal to sample rate * 256
 // But not less than so targeting 257
 // pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 260);
-pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 257);
+pub const PLL3_P_HZ: Hertz = Hertz::from_raw(AUDIO_SAMPLE_HZ.raw() * 256);
 
 pub type SaiContainer = (hal::sai::Sai<stm32::SAI1, hal::sai::I2S>, hal::sai::Sai<stm32::SAI2, hal::sai::I2S>);
 
 pub struct Codec {
-    pub reset: hal::gpio::Pin<'B', 11, Output>,
+
+    pub reset: hal::gpio::Pin<'C', 7>,
     pub sai1_mclk: hal::gpio::Pin<'E', 2>,
     pub sai1_sck: hal::gpio::Pin<'E', 5>,
     pub sai1_lrclk: hal::gpio::Pin<'E', 4>,
@@ -56,7 +57,7 @@ macro_rules! i2c_error_to_string {
 }
 
 #[allow(dead_code)]
-fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'B', 11, Output>) {
+fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'C', 7, Output>) {
     
     // Reset the codec chip
     // Hold it low for ~1ms
@@ -239,10 +240,14 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
         &codec_handler.clocks
     );
 
-    // codec_setup(&mut i2c1, codec_handler.reset);
-
     // Use PLL3_P for the SAI1 clock
     let sai1_rec = codec_handler.sai1_rec.kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::Pll3P);
+
+    // Master config
+    let master_config =
+        hal::sai::I2SChanConfig::new(hal::sai::I2SDir::Tx)
+        .set_sync_type(hal::sai::I2SSync::Master)
+        .set_frame_sync_active_high(true);
 
     let sai1_tx_config =
         hal::sai::I2SChanConfig::new(hal::sai::I2SDir::Tx)
@@ -280,10 +285,24 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
         Some(codec_handler.sai2_din.into_alternate())
     );
 
+    // let audio1 = codec_handler.sai1_dev.i2s_ch_a(
+    //     sai1_pins,
+    //     AUDIO_SAMPLE_HZ,
+    //     hal::sai::I2SDataSize::BITS_16,
+    //     // hal::sai::I2SDataSize::BITS_24,
+    //     sai1_rec,
+    //     &codec_handler.clocks,
+    //     hal::sai::I2sUsers::new(master_config),
+    // );
+
+    // audio1.enable();
+
+    // codec_setup(&mut i2c1, codec_handler.reset.into());
+
     let audio1 = codec_handler.sai1_dev.i2s_ch_a(
         sai1_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_32,
+        hal::sai::I2SDataSize::BITS_16,
         // hal::sai::I2SDataSize::BITS_24,
         sai1_rec,
         &codec_handler.clocks,
@@ -293,7 +312,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     let audio2 = codec_handler.sai2_dev.i2s_ch_a(
         sai2_pins,
         AUDIO_SAMPLE_HZ,
-        hal::sai::I2SDataSize::BITS_32,
+        hal::sai::I2SDataSize::BITS_16,
         // hal::sai::I2SDataSize::BITS_24,
         codec_handler.sai2_rec,
         &codec_handler.clocks,

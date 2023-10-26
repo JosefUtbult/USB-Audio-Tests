@@ -1,4 +1,5 @@
-use cortex_m::{asm, prelude::_embedded_hal_blocking_i2c_Write};
+use cortex_m::prelude::_embedded_hal_blocking_i2c_Write;
+use cortex_m::asm;
 
 use super::*;
 
@@ -76,7 +77,7 @@ fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'C', 7, 
 
     // Write a bunch of commands
 
-    const CODEC_ADDR: u8 = 0b001000_1; // on wire 001000_[ADDR=1]
+    const CODEC_ADDR: u8 = 0b001000_0; // on wire 001000_[ADDR=1]
 
     let control_1_reg = &[
         0x01u8, // Control Mode 
@@ -94,15 +95,18 @@ fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'C', 7, 
 
     let mut buf = *control_1_reg;
     defmt::debug!("control_1_reg {:?}", buf);
+
     match i2c.write(CODEC_ADDR, &buf) {
         Ok(_) => {
-            defmt::debug!("Ok");
+            // defmt::debug!("Ok");
         }
         Err(err) => {
-            i2c_error_to_string!(err);
-            panic!("error {:?}", err);
+            // i2c_error_to_string!(err);
+            // defmt::info!("Here");
+            // panic!("error {:?}", err);
         }
     }
+
 
     let control_2_reg = &[
         0x07u8, // Control Mode 2
@@ -231,15 +235,6 @@ fn codec_setup(i2c: &mut I2c<hal::pac::I2C1>, mut reset: hal::gpio::Pin<'C', 7, 
 
 pub fn init(mut codec_handler: Codec) -> SaiContainer {
 
-    #[allow(unused)]
-    let mut i2c1 = codec_handler.i2c1.i2c(
-        (
-            codec_handler.i2c1_scl.into_alternate().set_open_drain(), 
-            codec_handler.i2c1_sda.into_alternate().set_open_drain()), 
-        Hertz::from_raw(4_000), codec_handler.i2c1_peripheral, 
-        &codec_handler.clocks
-    );
-
     // Use PLL3_P for the SAI1 clock
     let sai1_rec = codec_handler.sai1_rec.kernel_clk_mux(hal::rcc::rec::Sai1ClkSel::Pll3P);
 
@@ -261,7 +256,7 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
 
     let sai2_tx_config = 
         hal::sai::I2SChanConfig::new(hal::sai::I2SDir::Tx)
-        .set_sync_type(hal::sai::I2SSync::Internal)
+        .set_sync_type(hal::sai::I2SSync::Master)
         .set_frame_sync_active_high(true);
 
     let sai2_rx_config = 
@@ -297,8 +292,6 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
 
     // audio1.enable();
 
-    // codec_setup(&mut i2c1, codec_handler.reset.into());
-
     let audio1 = codec_handler.sai1_dev.i2s_ch_a(
         sai1_pins,
         AUDIO_SAMPLE_HZ,
@@ -323,10 +316,31 @@ pub fn init(mut codec_handler: Codec) -> SaiContainer {
     // Sound breaks up without this enabled
     codec_handler.scb.enable_icache();
 
+
+    let sai_container = (audio1, audio2);
+
+    // enable(&mut sai_container);
+
+    for _ in 0..100000 {
+        asm::nop();
+    }
+
+    #[allow(unused)]
+    let mut i2c1 = codec_handler.i2c1.i2c(
+        (
+            codec_handler.i2c1_scl.into_alternate().set_open_drain(), 
+            codec_handler.i2c1_sda.into_alternate().set_open_drain()), 
+        Hertz::from_raw(4_000), codec_handler.i2c1_peripheral, 
+        &codec_handler.clocks
+    );
+
+    // codec_setup(&mut i2c1, codec_handler.reset.into());
+    
     // Try to synchronize the second SAI instance with the first
     // audio2.set_sync_input(0);
 
-    (audio1, audio2)
+    sai_container
+    
 }
 
 pub fn enable(sai_container: &mut SaiContainer) {
@@ -349,5 +363,5 @@ pub fn enable(sai_container: &mut SaiContainer) {
     // From the reference manual (rev7 page 2259)
     
     sai_container.0.try_send(0, 0).unwrap();
-    // sai_container.1.try_send(0, 0).unwrap();
+    sai_container.1.try_send(0, 0).unwrap();
 }

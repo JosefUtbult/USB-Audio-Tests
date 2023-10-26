@@ -104,12 +104,13 @@ def generate_packet_size_plot(args, ax):
 
 
 def generate_frame_rate_plot(args, ax):
+   
     generate_general_plot(args.frame_rate_file, ax, float, '#25da81', trendline=True, trendline_color='#199256')
     
     # Make the diagram go between 0 - 4 ms, as this is the range we
     # are interested in
     # ax.set_ylim(280, 295)
-    ax.set_ylim(46.5, 49.5)
+    # ax.set_ylim(46.5, 49.5)
 
     # Set labels
     ax.set_xlabel("Time (ms)")

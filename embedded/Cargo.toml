@@ -33,6 +33,7 @@ usbd-audio = { path = "../dependencies/usbd-audio", features = ["async-synchroni
 # usbd-audio = { git = "https://github.com/JosefUtbult/usbd-audio.git", branch = "async", features = ["async-synchronization"] }
 
 usb-device = { path = "../dependencies/usb-device", features = ["control-buffer-256"] }
+nb = "1.1.0"
 # usb-device = { version = "0.2.8", features = ["synchronization-type"]}
 # usb-device = { version = "0.2.8" }
 
